@@ -27,8 +27,6 @@ type redisServer struct {
 
 var server redisServer
 
-// Absolute config file path, or empty
-
 func main() {
 	initServerConfig()
 	loadConfig()
@@ -86,15 +84,15 @@ func usage() {
 }
 
 func initServer() {
-	el, ok := ae.CreateEventLoop(server.maxclients)
-	if !ok {
-		log.Fatalln("failed creating the event loop.")
+	el, err := ae.CreateEventLoop(server.maxclients)
+	if err != nil {
+		log.Fatalln("failed creating the event loop.", err)
 	}
 	server.el = el
 
 	listenToPort()
 
-	server.el.CreateFileEvent(server.ipfd[0], ae.AE_READABLE, tcpAcceptHandler, nil)
+	server.el.CreateFileEvent(server.ipfd[0], ae.AE_READABLE, acceptTcpHandler, nil)
 }
 
 func listenToPort() {
@@ -103,7 +101,7 @@ func listenToPort() {
 	}
 	ipfd, err := anet.TcpServer(server.port, "", server.tcp_backlog)
 	if err != nil {
-		log.Fatalln("TcpServer failed", err)
+		log.Fatalln("tcpServer failed", err)
 	}
 	server.ipfd = append(server.ipfd, ipfd)
 	anet.NonBlock(ipfd)

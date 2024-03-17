@@ -29,9 +29,21 @@ func TcpServer(port int, bindaddr string, backlog int) (int, error) {
 	return fd, nil
 }
 
+func TcpAccept(fd int) (int, syscall.Sockaddr, error) {
+	cfd, sa, err := syscall.Accept(fd)
+	if err != nil {
+		return -1, nil, err
+	}
+	return cfd, sa, nil
+}
+
 func NonBlock(fd int) error {
 	if err := syscall.SetNonblock(fd, true); err != nil {
 		return err
 	}
 	return nil
+}
+
+func EnableTcpNoDelay(fd int) error {
+	return syscall.SetsockoptInt(fd, syscall.SOCK_STREAM, syscall.TCP_NODELAY, 1)
 }

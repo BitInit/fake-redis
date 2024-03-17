@@ -36,7 +36,7 @@ type FireEvent struct {
 	fd   int
 }
 
-func CreateEventLoop(setsize int) (*EventLoop, bool) {
+func CreateEventLoop(setsize int) (*EventLoop, error) {
 	el := &EventLoop{
 		maxfd:           -1,
 		setsize:         setsize,
@@ -50,15 +50,15 @@ func CreateEventLoop(setsize int) (*EventLoop, bool) {
 		el.events[i] = fe
 		el.fired[i] = &FireEvent{}
 	}
-	if !apiCreate(el) {
-		return nil, false
+	if err := apiCreate(el); err != nil {
+		return nil, err
 	}
-	return el, true
+	return el, nil
 }
 
 func (el *EventLoop) processEvents() int {
 	processed := 0
-	n := apiPoll(el)
+	n := apiPoll(el, nil)
 	for i := 0; i < n; i++ {
 		fd := el.fired[i].fd
 		fe := el.events[fd]
@@ -94,8 +94,8 @@ func (el *EventLoop) CreateFileEvent(fd int, mask int, proc FileProc, clientData
 		return errors.New("math result not representable")
 	}
 
-	if ok := apiAddEvent(el, fd, mask); !ok {
-		return errors.New("add event failed")
+	if err := apiAddEvent(el, fd, mask); err != nil {
+		return err
 	}
 	fe := el.events[fd]
 	fe.mask |= mask
@@ -110,6 +110,29 @@ func (el *EventLoop) CreateFileEvent(fd int, mask int, proc FileProc, clientData
 		el.maxfd = fd
 	}
 	return nil
+}
+
+func (el *EventLoop) DeleteFileEvent(fd int, mask int) {
+	if fd >= el.setsize {
+		return
+	}
+
+	fe := el.events[fd]
+	if fe.mask == AE_NONE {
+		return
+	}
+
+	apiDelEvent(el, fd, mask)
+	fe.mask = AE_NONE
+	if fd == el.maxfd && fe.mask == AE_NONE {
+		j := 0
+		for j = el.maxfd - 1; j >= 0; j-- {
+			if el.events[j].mask != AE_NONE {
+				break
+			}
+		}
+		el.maxfd = j
+	}
 }
 
 func AeMain(el *EventLoop) {

@@ -1,8 +1,8 @@
 package ae
 
 import (
-	"log"
 	"syscall"
+	"time"
 )
 
 type apiState struct {
@@ -10,24 +10,28 @@ type apiState struct {
 	events []syscall.EpollEvent
 }
 
-func apiCreate(eventLoop *EventLoop) bool {
+func apiCreate(eventLoop *EventLoop) error {
 	fd, err := syscall.EpollCreate(1024)
 	if err != nil {
-		log.Println("epoll apiCreate failed")
-		return false
+		return err
 	}
 
-	state := apiState{
+	state := &apiState{
 		epfd:   fd,
 		events: make([]syscall.EpollEvent, eventLoop.setsize),
 	}
-	eventLoop.apidata = &state
-	return true
+	eventLoop.apidata = state
+	return nil
 }
 
-func apiPoll(el *EventLoop) int {
+func apiPoll(el *EventLoop, t *time.Duration) int {
 	state := el.apidata.(*apiState)
-	n, err := syscall.EpollWait(state.epfd, state.events, -1)
+
+	msec := -1
+	if t != nil {
+		msec = int(t.Milliseconds())
+	}
+	n, err := syscall.EpollWait(state.epfd, state.events, msec)
 	if err != nil {
 		return 0
 	}
@@ -53,7 +57,7 @@ func apiPoll(el *EventLoop) int {
 	return n
 }
 
-func apiAddEvent(el *EventLoop, fd int, mask int) bool {
+func apiAddEvent(el *EventLoop, fd int, mask int) error {
 	state := el.apidata.(*apiState)
 	op := syscall.EPOLL_CTL_MOD
 	if el.events[fd].mask == AE_NONE {
@@ -70,7 +74,26 @@ func apiAddEvent(el *EventLoop, fd int, mask int) bool {
 	}
 	ee.Fd = int32(fd)
 	if err := syscall.EpollCtl(state.epfd, op, fd, &ee); err != nil {
-		return false
+		return err
 	}
-	return true
+	return nil
+}
+
+func apiDelEvent(el *EventLoop, fd int, delmask int) {
+	state := el.apidata.(*apiState)
+	mask := el.events[fd].mask & (^delmask)
+
+	ee := syscall.EpollEvent{}
+	if mask&AE_READABLE != 0 {
+		ee.Events |= syscall.EPOLLIN
+	}
+	if mask&AE_WRITABLE != 0 {
+		ee.Events |= syscall.EPOLLOUT
+	}
+	ee.Fd = int32(fd)
+	if mask != AE_NONE {
+		syscall.EpollCtl(state.epfd, syscall.EPOLL_CTL_MOD, fd, &ee)
+	} else {
+		syscall.EpollCtl(state.epfd, syscall.EPOLL_CTL_DEL, fd, &ee)
+	}
 }
