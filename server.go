@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/BitInit/fake-redis/ae"
 	"github.com/BitInit/fake-redis/anet"
@@ -23,9 +24,26 @@ type redisServer struct {
 	el *ae.EventLoop
 
 	dbnum int
+
+	next_client_id atomic.Uint64
+	current_client *client
 }
 
 var server redisServer
+
+type redisCommandProc func(c *client)
+type redisCommand struct {
+	name string
+	proc redisCommandProc
+}
+
+var redisCommandTalbe []redisCommand = []redisCommand{
+	redisCommand{name: "command", proc: commandCommand},
+}
+
+func commandCommand(c *client) {
+
+}
 
 func main() {
 	initServerConfig()
@@ -89,9 +107,7 @@ func initServer() {
 		log.Fatalln("failed creating the event loop.", err)
 	}
 	server.el = el
-
 	listenToPort()
-
 	server.el.CreateFileEvent(server.ipfd[0], ae.AE_READABLE, acceptTcpHandler, nil)
 }
 
@@ -105,4 +121,14 @@ func listenToPort() {
 	}
 	server.ipfd = append(server.ipfd, ipfd)
 	anet.NonBlock(ipfd)
+}
+
+func processCommand(c *client) bool {
+	argv0 := c.argv[0].ptr.([]byte)
+	if strings.EqualFold(string(argv0), "quit") {
+		// TODO addReply ok
+		return true
+	}
+
+	return false
 }

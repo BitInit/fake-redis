@@ -45,5 +45,9 @@ func NonBlock(fd int) error {
 }
 
 func EnableTcpNoDelay(fd int) error {
-	return syscall.SetsockoptInt(fd, syscall.SOCK_STREAM, syscall.TCP_NODELAY, 1)
+	return syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
+}
+
+func DisenableTcpNoDelay(fd int) error {
+	return syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 0)
 }

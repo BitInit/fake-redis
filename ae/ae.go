@@ -41,6 +41,7 @@ func CreateEventLoop(setsize int) (*EventLoop, error) {
 		maxfd:           -1,
 		setsize:         setsize,
 		timeEventNextId: 0,
+		stop:            false,
 		lastTime:        time.Now(),
 		events:          make([]*FileEvent, setsize),
 		fired:           make([]*FireEvent, setsize),
