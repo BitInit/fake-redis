@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/BitInit/fake-redis/adlist"
 	"github.com/BitInit/fake-redis/ae"
 	"github.com/BitInit/fake-redis/anet"
 	"github.com/BitInit/fake-redis/util"
@@ -27,6 +28,8 @@ type redisServer struct {
 
 	next_client_id atomic.Uint64
 	current_client *client
+
+	clients_pending_write *adlist.List
 }
 
 var server redisServer
@@ -42,7 +45,6 @@ var redisCommandTalbe []redisCommand = []redisCommand{
 }
 
 func commandCommand(c *client) {
-
 }
 
 func main() {
@@ -109,6 +111,13 @@ func initServer() {
 	server.el = el
 	listenToPort()
 	server.el.CreateFileEvent(server.ipfd[0], ae.AE_READABLE, acceptTcpHandler, nil)
+	server.el.SetBeforeSleepProc(beforeSleepProc)
+	server.clients_pending_write = adlist.Create()
+}
+
+func beforeSleepProc() {
+	// send data to client
+	handleClientsWithPendingWrites()
 }
 
 func listenToPort() {
@@ -127,8 +136,10 @@ func processCommand(c *client) bool {
 	argv0 := c.argv[0].ptr.([]byte)
 	if strings.EqualFold(string(argv0), "quit") {
 		// TODO addReply ok
+		addReplyString(c, "-ERR ")
+		addReplyString(c, "This is a test message\r\n")
 		return true
 	}
-
-	return false
+	addReplyString(c, "-ERR synerr\r\n")
+	return true
 }

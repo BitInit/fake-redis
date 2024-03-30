@@ -59,13 +59,41 @@ func (s *Sds) MakeRoomFor(addlen int) *Sds {
 
 func (s *Sds) Range(start, end int) *Sds {
 	oldlen := s.len
-	if oldlen == 0 || start >= oldlen {
+	if oldlen == 0 {
 		return s
 	}
-	if end > oldlen || end < 0 {
-		end = oldlen
+	if start < 0 {
+		start = oldlen + start
+		if start < 0 {
+			start = 0
+		}
 	}
-	copy(s.Buf, s.Buf[start:end])
-	s.len = end - start
+	if end < 0 {
+		end = oldlen + end
+		if end < 0 {
+			end = 0
+		}
+	}
+
+	newlen := 0
+	if start <= end {
+		newlen = end - start + 1
+	}
+	if newlen != 0 {
+		if start >= oldlen {
+			newlen = 0
+		} else if end >= oldlen {
+			newlen = 0
+			if start <= end {
+				newlen = end - start + 1
+			}
+		}
+	} else {
+		start = 0
+	}
+	if start > 0 && newlen > 0 {
+		copy(s.Buf, s.Buf[start:start+newlen])
+	}
+	s.len = newlen
 	return s
 }

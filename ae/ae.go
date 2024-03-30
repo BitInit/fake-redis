@@ -10,6 +10,8 @@ const AE_READABLE = 1
 const AE_WRITABLE = 2
 const AE_BARRIER = 4
 
+type beforesleepProc func()
+
 type EventLoop struct {
 	maxfd           int
 	setsize         int
@@ -18,8 +20,9 @@ type EventLoop struct {
 	events          []*FileEvent
 	fired           []*FireEvent
 	apidata         interface{}
+	stop            bool
 
-	stop bool
+	beforesleep beforesleepProc
 }
 
 type FileProc func(eventLoop *EventLoop, fd int, clientData interface{}, mask int)
@@ -55,6 +58,10 @@ func CreateEventLoop(setsize int) (*EventLoop, error) {
 		return nil, err
 	}
 	return el, nil
+}
+
+func (el *EventLoop) SetBeforeSleepProc(proc beforesleepProc) {
+	el.beforesleep = proc
 }
 
 func (el *EventLoop) processEvents() int {
@@ -139,6 +146,9 @@ func (el *EventLoop) DeleteFileEvent(fd int, mask int) {
 func AeMain(el *EventLoop) {
 	el.stop = false
 	for !el.stop {
+		if el.beforesleep != nil {
+			el.beforesleep()
+		}
 		el.processEvents()
 	}
 }

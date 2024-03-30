@@ -36,8 +36,9 @@ type client struct {
 	lastcmd      *redisCommand
 
 	// repsonse buffer
-	buf    [protoReplyChunkBytes]byte
-	bufpos int
+	buf     [protoReplyChunkBytes]byte
+	bufpos  int
+	sentlen int // Amount of bytes already sent in the current buffer
 }
 
 func acceptTcpHandler(el *ae.EventLoop, s int, privdata interface{}, mask int) {
@@ -85,7 +86,12 @@ func freeClient(c *client) {
 }
 
 func resetClient(c *client) {
+	c.argc = 0
+	c.argv = make([]*robj, 0)
 
+	c.reqtype = protoNone
+	c.multibulklen = 0
+	c.bulklen = -1
 }
 
 func processMultibulkBuffer(c *client) bool {
@@ -167,7 +173,7 @@ func processInputBuffer(c *client) {
 			resetClient(c)
 		} else {
 			if processCommand(c) {
-				// pass
+				resetClient(c)
 			}
 			if server.current_client == nil {
 				break
@@ -210,8 +216,33 @@ func readQueryFromClient(el *ae.EventLoop, s int, privdata interface{}, mask int
 // ==========================================
 // client reponse data
 // ==========================================
-func sendReplyToClient(el *ae.EventLoop, s int, privdata interface{}, mask int) {
+func clientInstallWriteHandler(c *client) {
+	server.clients_pending_write.AddNodeHead(c)
+}
 
+func prepareClientToWrite(c *client) bool {
+	if !clientHasPendingReplies(c) {
+		clientInstallWriteHandler(c)
+	}
+	return true
+}
+
+func addReply(c *client, obj *robj) {
+	if !prepareClientToWrite(c) {
+		return
+	}
+	// if !_addReplyToBuffer(c, []byte) {
+	// 	log.Panicln("send data error")
+	// }
+}
+
+func addReplyString(c *client, s string) {
+	if !prepareClientToWrite(c) {
+		return
+	}
+	if !_addReplyToBuffer(c, []byte(s)) {
+		log.Panicln("send data error")
+	}
 }
 
 func _addReplyToBuffer(c *client, b []byte) bool {
@@ -222,4 +253,43 @@ func _addReplyToBuffer(c *client, b []byte) bool {
 	copy(c.buf[c.bufpos:], b)
 	c.bufpos += len(b)
 	return true
+}
+
+func clientHasPendingReplies(c *client) bool {
+	return c.bufpos > 0
+}
+
+func writeToClient(fd int, c *client, handler_installed bool) bool {
+	for clientHasPendingReplies(c) {
+		if c.bufpos > 0 {
+			nwritten, err := syscall.Write(fd, c.buf[c.sentlen:c.bufpos])
+			if err != nil {
+				break
+			}
+			c.sentlen += nwritten
+
+			if c.sentlen == c.bufpos {
+				c.bufpos = 0
+				c.sentlen = 0
+			}
+		}
+	}
+	return false
+}
+
+func handleClientsWithPendingWrites() int {
+	list := server.clients_pending_write
+	processed := list.Length()
+
+	li := list.Iterator(true)
+	for ln := li.Next(); ln != nil; ln = li.Next() {
+		c := ln.NodeValue().(*client)
+		list.DelNode(ln)
+
+		if !writeToClient(c.fd, c, false) {
+			continue
+		}
+		// TODO
+	}
+	return int(processed)
 }
