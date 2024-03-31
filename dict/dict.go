@@ -12,11 +12,11 @@ type dictEntry struct {
 	next *dictEntry
 }
 
-type DictType interface {
-	hashFunction(key interface{}) uint64
-	keyDup(privdata interface{}, key interface{})
-	valDup(privdata interface{}, obj interface{})
-	keyCompare(privdata interface{}, key1 interface{}, key2 interface{}) int
+type DictType struct {
+	HashFunction func(key interface{}) uint64
+	KeyDup       func(privdata interface{}, key interface{}) interface{}
+	ValDup       func(privdata interface{}, obj interface{}) interface{}
+	KeyCompare   func(privdata interface{}, key1 interface{}, key2 interface{}) int
 }
 
 type dictht struct {
@@ -27,7 +27,7 @@ type dictht struct {
 }
 
 type Dict struct {
-	dictType  DictType
+	dictType  *DictType
 	privdata  interface{}
 	ht        [2]dictht
 	rehashidx int64
@@ -41,7 +41,7 @@ func initDictht(ht *dictht) {
 	ht.used = 0
 }
 
-func Create(tp DictType, privdata interface{}) *Dict {
+func Create(tp *DictType, privdata interface{}) *Dict {
 	dict := &Dict{
 		dictType:  tp,
 		privdata:  privdata,
@@ -58,11 +58,11 @@ func (d *Dict) isRehashing() bool {
 }
 
 func (d *Dict) hashKey(key interface{}) uint64 {
-	return d.dictType.hashFunction(key)
+	return d.dictType.HashFunction(key)
 }
 
 func (d *Dict) compareKeys(key1 interface{}, key2 interface{}) int {
-	return d.dictType.keyCompare(d.privdata, key1, key2)
+	return d.dictType.KeyCompare(d.privdata, key1, key2)
 }
 
 func dictNextPower(size uint64) uint64 {
@@ -111,7 +111,7 @@ func (d *Dict) expandIfNeeded() bool {
 		return d.expand(dictHtInitialSize)
 	}
 
-	return false
+	return true
 }
 
 func (d *Dict) keyIndex(key interface{}, hash uint64, existing **dictEntry) int64 {
@@ -127,7 +127,7 @@ func (d *Dict) keyIndex(key interface{}, hash uint64, existing **dictEntry) int6
 		idx = hash & d.ht[tb].sizemask
 		he := d.ht[tb].table[idx]
 		for he != nil {
-			if key == he.key || d.compareKeys(key, he.key) == 0 {
+			if d.compareKeys(key, he.key) == 0 {
 				if existing != nil {
 					*existing = he
 				}
@@ -142,13 +142,95 @@ func (d *Dict) keyIndex(key interface{}, hash uint64, existing **dictEntry) int6
 	return int64(idx)
 }
 
+func (d *Dict) rehash(n int) {
+
+}
+
+func (d *Dict) rehashStep() {
+	if d.iterators != 0 {
+		return
+	}
+	d.rehash(1)
+}
+
 func (d *Dict) addRaw(key interface{}, existing **dictEntry) *dictEntry {
 	if d.isRehashing() {
-		// do rehashing step
+		d.rehashStep()
+	}
+
+	index := d.keyIndex(key, d.hashKey(key), existing)
+	if index == -1 {
+		return nil
+	}
+
+	ht := &d.ht[0]
+	if d.isRehashing() {
+		ht = &d.ht[1]
+	}
+	entry := &dictEntry{
+		next: ht.table[index],
+	}
+	ht.used++
+	ht.table[index] = entry
+	d.setKey(entry, key)
+	return entry
+}
+
+func (d *Dict) setKey(de *dictEntry, key interface{}) {
+	if d.dictType.KeyDup != nil {
+		de.key = d.dictType.KeyDup(d.privdata, key)
+		return
+	}
+	de.key = key
+}
+
+func (d *Dict) setEntryVal(de *dictEntry, val interface{}) {
+	if d.dictType.ValDup != nil {
+		de.v = d.dictType.ValDup(d.privdata, val)
+		return
+	}
+	de.v = val
+}
+
+func (d *Dict) Add(key interface{}, val interface{}) bool {
+	entry := d.addRaw(key, nil)
+
+	if entry == nil {
+		return false
+	}
+	d.setEntryVal(entry, val)
+	return true
+}
+
+func (d *Dict) find(key interface{}) *dictEntry {
+	if d.ht[0].used+d.ht[1].used == 0 {
+		return nil
+	}
+
+	if d.isRehashing() {
+		d.rehashStep()
+	}
+	h := d.hashKey(key)
+	for table := 0; table <= 1; table++ {
+		idx := h & d.ht[table].sizemask
+		he := d.ht[table].table[idx]
+		for he != nil {
+			if d.compareKeys(key, he.key) == 0 {
+				return he
+			}
+			he = he.next
+		}
+		if !d.isRehashing() {
+			return nil
+		}
 	}
 	return nil
 }
 
-func (d *Dict) Add(key interface{}, val interface{}) {
-
+func (d *Dict) GetVal(key interface{}) interface{} {
+	de := d.find(key)
+	if de == nil {
+		return nil
+	}
+	return de.v
 }

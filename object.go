@@ -3,6 +3,7 @@ package main
 const OBJ_ENCODING_RAW = 0 // Raw representation
 const OBJ_ENCODING_INT = 1 // Encoded as integer
 const OBJ_ENCODING_HT = 2
+const OBJ_ENCODING_EMBSTR = 8 // Embedded sds string encoding
 
 const OBJ_STRING = 0 // String object.
 const OBJ_LIST = 1   // List object.
@@ -18,6 +19,12 @@ type robj struct {
 	ptr      interface{}
 }
 
+func createStringObject(bs []byte) *robj {
+	newbs := make([]byte, len(bs))
+	copy(newbs, bs)
+	return createObject(OBJ_STRING, newbs)
+}
+
 func createObject(tp int, ptr interface{}) *robj {
 	return &robj{
 		tp:       uint8(tp),
@@ -26,4 +33,8 @@ func createObject(tp int, ptr interface{}) *robj {
 		refcount: 1,
 		ptr:      ptr,
 	}
+}
+
+func sdsEncodedObject(obj *robj) bool {
+	return obj.encoding == OBJ_ENCODING_RAW || obj.encoding == OBJ_ENCODING_EMBSTR
 }

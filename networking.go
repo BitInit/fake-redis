@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/BitInit/fake-redis/ae"
@@ -18,6 +20,8 @@ const protoReqInline = 1
 const protoReqMultibulk = 2
 
 const protoReplyChunkBytes = (16 * 1024) // 16k output buffer
+
+const PROTO_INLINE_MAX_SIZE = (1024 * 64)
 
 type client struct {
 	id uint64
@@ -99,14 +103,14 @@ func processMultibulkBuffer(c *client) bool {
 		buf := c.querybuf.Buf
 		idx := util.SliceIndexByte(buf, '\r', c.qb_pos)
 		if idx == -1 {
-			// TODO response error
-			log.Println("Protocol error: too big mbulk count string")
+			if c.querybuf.Len()-c.qb_pos > PROTO_INLINE_MAX_SIZE {
+				addReplyError(c, "Protocol error: too big mbulk count string")
+			}
 			return false
 		}
 		ll, err := strconv.Atoi(string(buf[c.qb_pos+1 : idx]))
-		if err != nil {
-			// TODO response error
-			log.Println("Protocol error: invalid multibulk length")
+		if err != nil || ll > 1024*1024 {
+			addReplyError(c, "Protocol error: invalid multibulk length")
 			return false
 		}
 		if ll <= 0 {
@@ -124,14 +128,13 @@ func processMultibulkBuffer(c *client) bool {
 				break
 			}
 			if c.querybuf.Buf[c.qb_pos] != '$' {
-				// TODO response error
-				log.Println("Protocol error: expected '$', got ", string(c.querybuf.Buf[c.qb_pos]))
+				addReplyErrorFormat(c, "Protocol error: expected '$', got '%c'",
+					c.querybuf.Buf[c.qb_pos])
 				return false
 			}
 			ll, err := strconv.Atoi(string(c.querybuf.Buf[c.qb_pos+1 : idx]))
 			if err != nil {
-				// TODO response error
-				log.Println("Protocol error: invalid multibulk length")
+				addReplyError(c, "Protocol error: invalid bulk length")
 				return false
 			}
 			c.qb_pos = idx + 2
@@ -141,7 +144,7 @@ func processMultibulkBuffer(c *client) bool {
 		if c.querybuf.Len()-c.qb_pos < c.bulklen+2 {
 			break
 		} else {
-			c.argv[c.argc] = createObject(OBJ_STRING, c.querybuf.Buf[c.qb_pos:c.qb_pos+c.bulklen])
+			c.argv[c.argc] = createStringObject(c.querybuf.Buf[c.qb_pos : c.qb_pos+c.bulklen])
 			c.argc++
 			c.qb_pos += c.bulklen + 2
 		}
@@ -213,9 +216,7 @@ func readQueryFromClient(el *ae.EventLoop, s int, privdata interface{}, mask int
 	processInputBufferAndReplicate(c)
 }
 
-// ==========================================
-// client reponse data
-// ==========================================
+// ============= Client reponse data ==============
 func clientInstallWriteHandler(c *client) {
 	server.clients_pending_write.AddNodeHead(c)
 }
@@ -231,9 +232,13 @@ func addReply(c *client, obj *robj) {
 	if !prepareClientToWrite(c) {
 		return
 	}
-	// if !_addReplyToBuffer(c, []byte) {
-	// 	log.Panicln("send data error")
-	// }
+
+	if sdsEncodedObject(obj) {
+		bs := obj.ptr.([]byte)
+		if !_addReplyToBuffer(c, bs) {
+			log.Panicln("send data error")
+		}
+	}
 }
 
 func addReplyString(c *client, s string) {
@@ -243,6 +248,23 @@ func addReplyString(c *client, s string) {
 	if !_addReplyToBuffer(c, []byte(s)) {
 		log.Panicln("send data error")
 	}
+}
+
+func addReplyError(c *client, s string) {
+	if len(s) == 0 || s[0] != '-' {
+		addReplyString(c, "-ERR ")
+	}
+	addReplyString(c, s)
+	addReplyString(c, "\r\n")
+}
+
+func addReplyErrorFormat(c *client, s string, args ...any) {
+	msg := fmt.Sprintf(s, args...)
+	var resp strings.Builder
+	for i := 0; i < len(msg); i++ {
+		resp.WriteByte(msg[i])
+	}
+	addReplyError(c, resp.String())
 }
 
 func _addReplyToBuffer(c *client, b []byte) bool {

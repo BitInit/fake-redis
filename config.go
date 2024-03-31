@@ -14,6 +14,7 @@ const CONFIG_BINDADDR_MAX = 16
 const CONFIG_DEFAULT_SERVER_PORT = 6379
 const CONFIG_DEFAULT_MAX_CLIENTS = 10000
 const CONFIG_DEFAULT_TCP_BACKLOG = 511
+const CONFIG_DEFAULT_DBNUM = 16
 
 const PROTO_IOBUF_LEN = (1024 * 16) /* Generic I/O buffer size */
 
@@ -21,7 +22,7 @@ func initServerConfig() {
 	server.maxclients = CONFIG_DEFAULT_MAX_CLIENTS
 	server.port = CONFIG_DEFAULT_SERVER_PORT
 	server.tcp_backlog = CONFIG_DEFAULT_TCP_BACKLOG
-	server.dbnum = 16
+	server.dbnum = CONFIG_DEFAULT_DBNUM
 }
 
 func loadServerConfig(confFile string, options string) {
