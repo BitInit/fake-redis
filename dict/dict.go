@@ -227,7 +227,7 @@ func (d *Dict) setKey(de *DictEntry, key interface{}) {
 	de.key = key
 }
 
-func (d *Dict) setEntryVal(de *DictEntry, val interface{}) {
+func (d *Dict) SetEntryVal(de *DictEntry, val interface{}) {
 	if d.dictType.ValDup != nil {
 		de.v = d.dictType.ValDup(d.privdata, val)
 		return
@@ -241,7 +241,7 @@ func (d *Dict) Add(key interface{}, val interface{}) bool {
 	if entry == nil {
 		return false
 	}
-	d.setEntryVal(entry, val)
+	d.SetEntryVal(entry, val)
 	return true
 }
 
@@ -276,6 +276,28 @@ func (d *Dict) GetVal(key interface{}) interface{} {
 		return nil
 	}
 	return de.v
+}
+
+func (d *Dict) GetSignedIntVal(key interface{}) (int64, bool) {
+	de := d.Find(key)
+	if de == nil {
+		return 0, false
+	}
+	if v, ok := de.v.(int64); !ok {
+		return 0, false
+	} else {
+		return v, true
+	}
+}
+
+func (d *Dict) SetSignedIntVal(key interface{}, val int64) {
+	var existing *DictEntry
+	de := d.addRaw(key, &existing)
+	if de == nil {
+		existing.v = val
+	} else {
+		de.v = val
+	}
 }
 
 func (d *Dict) genericDelete(key interface{}) *DictEntry {

@@ -15,10 +15,14 @@ import (
 	"github.com/BitInit/fake-redis/util"
 )
 
+const UNIT_SECONDS = 0
+const UNIT_MILLISECONDS = 1
+
 type redisServer struct {
 	configFile string
 	port       int
 	maxclients int
+	dirty      int
 
 	ipfd        []int
 	tcp_backlog int
@@ -60,6 +64,8 @@ func commandCommand(c *client) {
 type sharedObjectsStruct struct {
 	ok       *robj // +ok\r\n
 	nullbulk *robj // $-1\r\n
+
+	syntaxerr *robj // -ERR syntax error\r\n
 }
 
 var shared sharedObjectsStruct
@@ -67,6 +73,8 @@ var shared sharedObjectsStruct
 func createSharedObjects() {
 	shared.ok = createStringObject([]byte("+OK\r\n"))
 	shared.nullbulk = createStringObject([]byte("$-1\r\n"))
+
+	shared.syntaxerr = createStringObject([]byte("-ERR syntax error\r\n"))
 }
 
 func main() {

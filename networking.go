@@ -241,6 +241,32 @@ func addReply(c *client, obj *robj) {
 	}
 }
 
+func addReplyBulkLen(c *client, o *robj) {
+	var l int
+	if sdsEncodedObject(o) {
+		obj := o.ptr.([]byte)
+		l = len(obj)
+	} else {
+		n := o.ptr.(int64)
+		l = 1
+		if n < 0 {
+			l++
+			n = -n
+		}
+		for n = n / 10; n != 0; n = n / 10 {
+			l++
+		}
+	}
+	ls := strconv.Itoa(l)
+	addReplyString(c, "$"+ls+"\r\n")
+}
+
+func addReplyBulk(c *client, o *robj) {
+	addReplyBulkLen(c, o)
+	addReply(c, o)
+	addReplyString(c, "\r\n")
+}
+
 func addReplyString(c *client, s string) {
 	if !prepareClientToWrite(c) {
 		return
