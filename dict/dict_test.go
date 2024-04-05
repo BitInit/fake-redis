@@ -31,3 +31,14 @@ func TestAdd(t *testing.T) {
 	d.Add(uint64(5), "v5")
 	assert.Equal(t, uint64(2), d.ht[0].used)
 }
+
+func TestRehash(t *testing.T) {
+	d := Create(uint64DictType, nil)
+	d.Add(uint64(1), "v1")
+	d.Add(uint64(2), "v2")
+	d.Add(uint64(3), "v3")
+	d.Add(uint64(4), "v4")
+	d.Add(uint64(5), "v5")
+
+	assert.Equal(t, uint64(1), d.ht[1].used)
+}

@@ -4,6 +4,7 @@
 .vscode/
 # Binaries for programs and plugins
 *.exe
+fake-redis
 *.exe~
 *.dll
 *.so

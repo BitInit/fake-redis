@@ -12,6 +12,6 @@ func selectDb(c *client, id int) bool {
 	if id < 0 || id >= server.dbnum {
 		return false
 	}
-	c.db = id
+	c.db = server.db[id]
 	return true
 }

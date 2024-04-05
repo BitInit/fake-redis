@@ -26,7 +26,7 @@ const PROTO_INLINE_MAX_SIZE = (1024 * 64)
 type client struct {
 	id uint64
 	fd int
-	db int
+	db *redisDb
 
 	reqtype  int
 	qb_pos   int

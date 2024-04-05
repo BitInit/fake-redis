@@ -58,13 +58,15 @@ func commandCommand(c *client) {
 
 // ====================== share data ====================
 type sharedObjectsStruct struct {
-	ok *robj // +ok\r\n
+	ok       *robj // +ok\r\n
+	nullbulk *robj // $-1\r\n
 }
 
 var shared sharedObjectsStruct
 
 func createSharedObjects() {
 	shared.ok = createStringObject([]byte("+OK\r\n"))
+	shared.nullbulk = createStringObject([]byte("$-1\r\n"))
 }
 
 func main() {
@@ -193,7 +195,7 @@ func processCommand(c *client) bool {
 	if cmd == nil {
 		var args strings.Builder
 		for i := 1; i < c.argc && args.Len() < 128; i++ {
-			args.WriteString(string(c.argv[i].ptr.([]byte)))
+			args.WriteString(string(c.argv[i].ptr.([]byte)) + ", ")
 		}
 		addReplyErrorFormat(c,
 			"unkown command `%s`, with args beginning with: %s",

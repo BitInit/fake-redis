@@ -5,11 +5,17 @@ import (
 )
 
 const dictHtInitialSize = 4
+const dict_force_resize_ratio = 5
+const dict_can_resize = true
 
-type dictEntry struct {
+type DictEntry struct {
 	key  interface{}
 	v    interface{}
-	next *dictEntry
+	next *DictEntry
+}
+
+func (de *DictEntry) GetVal() interface{} {
+	return de.v
 }
 
 type DictType struct {
@@ -20,7 +26,7 @@ type DictType struct {
 }
 
 type dictht struct {
-	table    []*dictEntry
+	table    []*DictEntry
 	size     uint64
 	sizemask uint64
 	used     uint64
@@ -91,7 +97,7 @@ func (d *Dict) expand(size uint64) bool {
 	var n dictht
 	n.size = realsize
 	n.sizemask = realsize - 1
-	n.table = make([]*dictEntry, realsize)
+	n.table = make([]*DictEntry, realsize)
 	n.used = 0
 
 	if d.ht[0].table == nil {
@@ -111,10 +117,13 @@ func (d *Dict) expandIfNeeded() bool {
 		return d.expand(dictHtInitialSize)
 	}
 
+	if d.ht[0].used >= d.ht[0].size && (dict_can_resize || d.ht[0].used/d.ht[0].size > dict_force_resize_ratio) {
+		return d.expand(d.ht[0].used * 2)
+	}
 	return true
 }
 
-func (d *Dict) keyIndex(key interface{}, hash uint64, existing **dictEntry) int64 {
+func (d *Dict) keyIndex(key interface{}, hash uint64, existing **DictEntry) int64 {
 	if existing != nil {
 		*existing = nil
 	}
@@ -143,7 +152,41 @@ func (d *Dict) keyIndex(key interface{}, hash uint64, existing **dictEntry) int6
 }
 
 func (d *Dict) rehash(n int) {
+	empty_visits := n * 10
+	if !d.isRehashing() {
+		return
+	}
 
+	for ; n > 0 && d.ht[0].used != 0; n-- {
+		for d.ht[0].table[d.rehashidx] == nil {
+			d.rehashidx++
+			empty_visits--
+			if empty_visits == 0 {
+				return
+			}
+		}
+
+		de := d.ht[0].table[d.rehashidx]
+		for de != nil {
+			nextde := de.next
+
+			h := d.hashKey(de.key) & d.ht[1].sizemask
+			de.next = d.ht[1].table[h]
+			d.ht[1].table[h] = de
+			d.ht[0].used--
+			d.ht[1].used++
+			de = nextde
+		}
+		d.ht[0].table[d.rehashidx] = nil
+		d.rehashidx++
+	}
+
+	if d.ht[0].used == 0 {
+		d.ht[0].table = nil
+		d.ht[0] = d.ht[1]
+		initDictht(&d.ht[1])
+		d.rehashidx = -1
+	}
 }
 
 func (d *Dict) rehashStep() {
@@ -153,7 +196,7 @@ func (d *Dict) rehashStep() {
 	d.rehash(1)
 }
 
-func (d *Dict) addRaw(key interface{}, existing **dictEntry) *dictEntry {
+func (d *Dict) addRaw(key interface{}, existing **DictEntry) *DictEntry {
 	if d.isRehashing() {
 		d.rehashStep()
 	}
@@ -167,7 +210,7 @@ func (d *Dict) addRaw(key interface{}, existing **dictEntry) *dictEntry {
 	if d.isRehashing() {
 		ht = &d.ht[1]
 	}
-	entry := &dictEntry{
+	entry := &DictEntry{
 		next: ht.table[index],
 	}
 	ht.used++
@@ -176,7 +219,7 @@ func (d *Dict) addRaw(key interface{}, existing **dictEntry) *dictEntry {
 	return entry
 }
 
-func (d *Dict) setKey(de *dictEntry, key interface{}) {
+func (d *Dict) setKey(de *DictEntry, key interface{}) {
 	if d.dictType.KeyDup != nil {
 		de.key = d.dictType.KeyDup(d.privdata, key)
 		return
@@ -184,7 +227,7 @@ func (d *Dict) setKey(de *dictEntry, key interface{}) {
 	de.key = key
 }
 
-func (d *Dict) setEntryVal(de *dictEntry, val interface{}) {
+func (d *Dict) setEntryVal(de *DictEntry, val interface{}) {
 	if d.dictType.ValDup != nil {
 		de.v = d.dictType.ValDup(d.privdata, val)
 		return
@@ -202,7 +245,7 @@ func (d *Dict) Add(key interface{}, val interface{}) bool {
 	return true
 }
 
-func (d *Dict) find(key interface{}) *dictEntry {
+func (d *Dict) Find(key interface{}) *DictEntry {
 	if d.ht[0].used+d.ht[1].used == 0 {
 		return nil
 	}
@@ -228,9 +271,47 @@ func (d *Dict) find(key interface{}) *dictEntry {
 }
 
 func (d *Dict) GetVal(key interface{}) interface{} {
-	de := d.find(key)
+	de := d.Find(key)
 	if de == nil {
 		return nil
 	}
 	return de.v
+}
+
+func (d *Dict) genericDelete(key interface{}) *DictEntry {
+	if d.ht[0].used == 0 && d.ht[1].used == 0 {
+		return nil
+	}
+
+	if d.isRehashing() {
+		d.rehashStep()
+	}
+	h := d.hashKey(key)
+	for talbe := 0; talbe <= 1; talbe++ {
+		idx := h & d.ht[talbe].sizemask
+		he := d.ht[talbe].table[idx]
+		var prevHe *DictEntry = nil
+		for he != nil {
+			if d.compareKeys(he.key, key) == 0 {
+				if prevHe != nil {
+					prevHe.next = he.next
+				} else {
+					d.ht[talbe].table[idx] = he.next
+				}
+				d.ht[talbe].used--
+				return he
+			}
+			prevHe = he
+			he = he.next
+		}
+
+		if !d.isRehashing() {
+			break
+		}
+	}
+	return nil
+}
+
+func (d *Dict) Delete(key interface{}) bool {
+	return d.genericDelete(key) != nil
 }
