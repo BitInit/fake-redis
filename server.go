@@ -15,6 +15,7 @@ import (
 	"github.com/BitInit/fake-redis/util"
 )
 
+const VERSION = "5.0.8"
 const UNIT_SECONDS = 0
 const UNIT_MILLISECONDS = 1
 
@@ -34,10 +35,12 @@ type redisServer struct {
 	dbnum    int
 	db       []*redisDb
 
-	next_client_id atomic.Uint64
-	current_client *client
-
+	next_client_id        atomic.Uint64
+	current_client        *client
 	clients_pending_write *adlist.List
+
+	rdb_child_pid int
+	rdb_filename  string
 }
 
 var server redisServer
@@ -54,6 +57,7 @@ var redisCommandTalbe []*redisCommand = []*redisCommand{
 	{name: "setnx", proc: setnxCommand},
 	{name: "del", proc: delCommand},
 	{name: "command", proc: commandCommand},
+	{name: "save", proc: saveCommand},
 }
 
 func commandCommand(c *client) {
@@ -63,6 +67,7 @@ func commandCommand(c *client) {
 // ====================== share data ====================
 type sharedObjectsStruct struct {
 	ok       *robj // +ok\r\n
+	err      *robj // -ERR\r\n
 	nullbulk *robj // $-1\r\n
 
 	syntaxerr *robj // -ERR syntax error\r\n
@@ -72,6 +77,7 @@ var shared sharedObjectsStruct
 
 func createSharedObjects() {
 	shared.ok = createStringObject([]byte("+OK\r\n"))
+	shared.err = createStringObject([]byte("-ERR\r\n"))
 	shared.nullbulk = createStringObject([]byte("$-1\r\n"))
 
 	shared.syntaxerr = createStringObject([]byte("-ERR syntax error\r\n"))
@@ -157,6 +163,8 @@ func initServer() {
 
 	server.commands = dict.Create(commandTableDictType, nil)
 	populateCommandTable()
+	server.rdb_child_pid = -1
+	server.rdb_filename = "dump.rdb"
 }
 
 func populateCommandTable() {

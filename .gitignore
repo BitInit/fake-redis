@@ -9,6 +9,8 @@ fake-redis
 *.dll
 *.so
 *.dylib
+dump.rdb
+temp*.rdb
 
 # Test binary, built with `go test -c`
 *.test
