@@ -18,6 +18,10 @@ func (de *DictEntry) GetVal() interface{} {
 	return de.v
 }
 
+func (de *DictEntry) GetKey() interface{} {
+	return de.key
+}
+
 type DictType struct {
 	HashFunction func(key interface{}) uint64
 	KeyDup       func(privdata interface{}, key interface{}) interface{}
@@ -235,6 +239,10 @@ func (d *Dict) SetEntryVal(de *DictEntry, val interface{}) {
 	de.v = val
 }
 
+func (d *Dict) Size() int {
+	return int(d.ht[0].used + d.ht[1].used)
+}
+
 func (d *Dict) Add(key interface{}, val interface{}) bool {
 	entry := d.addRaw(key, nil)
 
@@ -336,4 +344,18 @@ func (d *Dict) genericDelete(key interface{}) *DictEntry {
 
 func (d *Dict) Delete(key interface{}) bool {
 	return d.genericDelete(key) != nil
+}
+
+func (d *Dict) GetSafeInterator() *DictIterator {
+	iter := &DictIterator{
+		d:         d,
+		table:     0,
+		index:     -1,
+		safe:      false,
+		entry:     nil,
+		nextEntry: nil,
+	}
+
+	iter.safe = true
+	return iter
 }

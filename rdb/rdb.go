@@ -8,10 +8,6 @@ import (
 )
 
 const (
-	rdbOpCodeAux = 250
-)
-
-const (
 	rdbEncVal   = 3
 	rdb6BitLen  = 0
 	rdb14BitLen = 1
@@ -64,6 +60,7 @@ func InitWithFile(fp *os.File) *Rdb {
 	return &Rdb{
 		_rio: &fileRio{
 			fp:       fp,
+			chckSum:  0,
 			buffered: 0,
 			autosync: 0,
 		},
@@ -71,17 +68,25 @@ func InitWithFile(fp *os.File) *Rdb {
 }
 
 func (r *Rdb) WriteRaw(buf []byte) (int, error) {
-	return r._rio.write(buf)
+	if err := r._rio.updateCkSum(buf); err != nil {
+		return 0, err
+	}
+	n, err := r._rio.write(buf)
+	if err != nil {
+		return n, err
+	}
+
+	return n, nil
 }
 
-func (r *Rdb) saveType(tp byte) error {
+func (r *Rdb) SaveType(tp byte) error {
 	if _, err := r.WriteRaw([]byte{tp}); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (r *Rdb) saveRawString(s string) error {
+func (r *Rdb) SaveRawString(s string) error {
 	l := len(s)
 	if l <= 11 {
 		buf := tryIntegerEncoding(s)
@@ -92,7 +97,7 @@ func (r *Rdb) saveRawString(s string) error {
 		}
 	}
 
-	if _, err := r.saveLen(uint64(l)); err != nil {
+	if _, err := r.SaveLen(uint64(l)); err != nil {
 		return err
 	}
 	if l > 0 {
@@ -103,7 +108,7 @@ func (r *Rdb) saveRawString(s string) error {
 	return nil
 }
 
-func (r *Rdb) saveLen(l uint64) (int, error) {
+func (r *Rdb) SaveLen(l uint64) (int, error) {
 	var buf []byte
 	if l < (1 << 6) {
 		buf = []byte{
@@ -124,14 +129,9 @@ func (r *Rdb) saveLen(l uint64) (int, error) {
 	return r.WriteRaw(buf)
 }
 
-func (r *Rdb) SaveAuxField(key string, val string) error {
-	if err := r.saveType(rdbOpCodeAux); err != nil {
-		return err
-	}
-	if err := r.saveRawString(key); err != nil {
-		return err
-	}
-	if err := r.saveRawString(val); err != nil {
+func (r *Rdb) SaveCheckSum() error {
+	chSum := binary.LittleEndian.AppendUint64([]byte{}, r._rio.getCkSum())
+	if _, err := r.WriteRaw(chSum); err != nil {
 		return err
 	}
 	return nil

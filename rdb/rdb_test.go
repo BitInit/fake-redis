@@ -12,7 +12,11 @@ type memRio struct {
 	pos int
 }
 
-func (mr *memRio) updateCkSum(buf []byte) {}
+func (mr *memRio) updateCkSum(buf []byte) error { return nil }
+
+func (mr *memRio) getCkSum() uint64 {
+	return 0
+}
 
 func (mr *memRio) read(buf []byte) int {
 	l := len(buf)
@@ -37,17 +41,17 @@ func (mr *memRio) clean() {
 func TestSaveLen(t *testing.T) {
 	mr := &memRio{pos: 0}
 	r := &Rdb{_rio: mr}
-	r.saveLen(31)
+	r.SaveLen(31)
 	assert.Equal(t, 1, len(mr.buf))
 	assert.Equal(t, int(31), int(mr.buf[0]))
 
 	mr.clean()
-	r.saveLen(64)
+	r.SaveLen(64)
 	assert.Equal(t, 2, len(mr.buf))
 	assert.Equal(t, int(1<<6), int(mr.buf[0]))
 
 	mr.clean()
-	r.saveLen(math.MaxUint32 + 1)
+	r.SaveLen(math.MaxUint32 + 1)
 	assert.Equal(t, 9, len(mr.buf))
 	assert.Equal(t, int(0x01), int(mr.buf[4]))
 }
